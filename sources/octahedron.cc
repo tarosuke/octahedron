@@ -17,7 +17,11 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 #include <cmath>
+#include <tb/app.h>
+#include <tb/canvas.h>
 #include <tb/image.h>
+#include <tb/prefs.h>
+#include <tb/string.h>
 #include <tb/vector.h>
 
 
@@ -95,7 +99,7 @@ private:
 };
 
 // スカイボックス
-struct Box : In {
+struct Box : public In {
 	Box(tb::Image& i) : In(i) {};
 
 private:
@@ -106,4 +110,25 @@ private:
 };
 
 
-int main() { return 0; }
+static tb::Prefs<tb::String> inPath("--in",
+	"input file(equirectangler, skybox, etc...)",
+	tb::CommonPrefs::nosave);
+static tb::Prefs<tb::String> outPath(
+	"--out", "output file(octahedron)", tb::CommonPrefs::nosave);
+static struct App : tb::App {
+	int Main(uint rem, const char** argv) final {
+		tb::Canvas in((std::string)inPath);
+
+		tb::Canvas::Image inImage(in);
+		Equirectangular eq(inImage);
+
+		tb::Canvas outCanvas(inImage.Width(), inImage.Height());
+		{
+			tb::Canvas::Image outImage(outCanvas);
+			Out out(outImage, eq);
+		}
+		outCanvas.Save((std::string)outPath);
+
+		return 0;
+	};
+} app;
