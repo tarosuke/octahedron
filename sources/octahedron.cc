@@ -53,12 +53,12 @@ protected:
 
 	// テクスチャ座標から空間中の方向を求めてin.GetColor
 	tb::Color GetColor(unsigned x, unsigned y) const {
-		const float xx((float)x / image.Width() - 0.5);
-		const float yy((float)y / image.Height() - 0.5);
+		const float xx((2.0f * x) / image.Width() - 1);
+		const float yy((2.0f * y) / image.Height() - 1);
 		const float ax(std::fabs(xx));
 		const float ay(std::fabs(yy));
-		const float sx(std::signbit(xx));
-		const float sy(std::signbit(yy));
+		const float sx(std::signbit(xx) ? -1 : 1);
+		const float sy(std::signbit(yy) ? -1 : 1);
 
 		// 高さ(折り返し部分は負になる)
 		const float h(1.0f - ax - ay);
@@ -66,13 +66,14 @@ protected:
 		// 投影して正規化
 		if (h < 0) {
 			// 下側
-			tb::Vector<3, float> v{Fold(ax, sx), Fold(ay, sy), h};
+			tb::Vector<3, float> v{
+				-sx * sy * Fold(ay, sy), sx * sy * Fold(ax, sx), h};
 			v.Normalize();
 			return in.GetColor(v);
 		}
 
 		// 上側
-		tb::Vector<3, float> v{xx, yy, h};
+		tb::Vector<3, float> v{-xx, yy, h};
 		v.Normalize();
 		return in.GetColor(v);
 	};
@@ -80,7 +81,7 @@ protected:
 private:
 	static float Fold(float a, float s) {
 		// 下側なので四隅を折り返す
-		return (1.0 - a) * s;
+		return (1 - a) * s;
 	};
 };
 
@@ -94,7 +95,9 @@ private:
 		const float e(std::atan2(v[2], std::sqrt(v[0] * v[0] + v[1] * v[1])));
 		const float d(std::atan2(v[1], v[0]));
 
-		return tb::Color(image.Get(d, e));
+		return tb::Color(image.Get(
+			((d / std::numbers::pi_v<float>)+1.0f) * image.Width() / 2,
+			((-e / std::numbers::pi_v<float>)+0.5f) * (image.Height() - 1)));
 	};
 };
 
@@ -121,8 +124,11 @@ static struct App : tb::App {
 
 		tb::Canvas::Image inImage(in);
 		Equirectangular eq(inImage);
+		const unsigned length(inImage.Width() < inImage.Height()
+								  ? inImage.Height()
+								  : inImage.Width());
 
-		tb::Canvas outCanvas(inImage.Width(), inImage.Height());
+		tb::Canvas outCanvas(length, length);
 		{
 			tb::Canvas::Image outImage(outCanvas);
 			Out out(outImage, eq);
