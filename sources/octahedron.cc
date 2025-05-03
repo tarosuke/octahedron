@@ -67,7 +67,8 @@ protected:
 		if (h < 0) {
 			// 下側
 			tb::Vector<3, float> v{
-				-sx * sy * Fold(ay, sy), sx * sy * Fold(ax, sx), h};
+				-sx * sy * Fold(ay, sy), sx * sy * Fold(ax, sx),
+				h * std::sqrtf(2)};
 			v.Normalize();
 			return in.GetColor(v);
 		}
@@ -88,7 +89,7 @@ private:
 
 // 正距円筒
 struct Equirectangular : In {
-	Equirectangular(tb::Image& i) : In(i) {};
+	Equirectangular(const tb::Image& i) : In(i) {};
 
 private:
 	tb::Color GetColor(const tb::Vector<3, float>& v) const final {
@@ -103,38 +104,146 @@ private:
 
 // スカイボックス
 struct Box : public In {
-	Box(tb::Image& i) : In(i) {};
+	Box(const tb::Image& i) :
+		In(i),
+		hw(i.Width() / 8.0),
+		hh(i.Height() / 6.0),
+		max{
+			{
+				uvw : {1, 2, 0},
+				oss :
+					{{
+						 // 右側面
+						 offset : {hw * 5, hh * 3},
+						 scale : {-hw, hh}
+					 },
+					 {
+						 // 左側面
+						 offset : {hw, hh * 3},
+						 scale : {hw, -hh}
+					 }}
+			},
+			{
+				uvw : {0, 1, 2},
+				oss :
+					{{
+						 // 底
+						 offset : {hw * 3, hh * 5},
+						 scale : {hw, -hh}
+					 },
+					 {
+						 // 天井
+						 offset : {hw * 3, hh},
+						 scale : {-hw, -hh}
+					 }}
+			},
+			{
+				uvw : {0, 2, 1},
+				oss :
+					{{
+						 // 前
+						 offset : {hw * 3, hh * 3},
+						 scale : {hw, hh}
+					 },
+					 {
+						 // 後
+						 offset : {hw * 7, hh * 3},
+						 scale : {hw, -hh}
+					 }}
+			},
+		},
+		handlers{&max[0], &max[0], 0, &max[1], &max[2], 0, &max[2], &max[1]} {};
 
 private:
-	tb::Color GetColor(const tb::Vector<3, float>& v) const final {
+	const float hw; // 面の半分の幅(画像の1/8)
+	const float hh; // 面の半分の高さ(画像の1/6)
+	struct Handler {
+		unsigned uvw[3];
+		struct OS {
+			tb::Vector<2, float> offset; // 面の中心
+			tb::Vector<2, float> scale;
+		} oss[2]; // 対象軸が負[0] / 正[1]
+	};
+	tb::Color H(float u, float v, float w, const Handler::OS& os) const {
+		// u, v: -1.0 to 1.0
+		// o: u, v offset
+		// u, vを(0.0, 0.0) - (1/4, 1/3)に収めてoを足してその座標の色を返す
 
-		return tb::Color();
+		return image.Get(
+			os.offset[0] + os.scale[0] * u / w,
+			os.offset[1] + os.scale[1] * v / w);
+	};
+	const Handler max[3];
+	const Handler* const handlers[8];
+
+
+	tb::Color GetColor(const tb::Vector<3, float>& v) const final {
+		const float ax(std::abs(v[0]));
+		const float ay(std::abs(v[1]));
+		const float az(std::abs(v[2]));
+
+		/***** a[0], a[1], a[2]で最大のものを選択
+		 * ax: 00xb = 0, 1
+		 * ay: 1x0b = 4, 6
+		 * az: x11b = 3, 7
+		 */
+		auto& h(*handlers[(ax < ay) * 4 | (ax < az) * 2 | (ay < az)]);
+
+		const unsigned& w(h.uvw[2]);
+		return H(v[h.uvw[0]], v[h.uvw[1]], v[w], h.oss[0 < v[w]]);
 	};
 };
 
 
-static tb::Prefs<tb::String> inPath("--in",
+static tb::Prefs<tb::String> inPath(
+	"--in",
 	"input file(equirectangler, skybox, etc...)",
 	tb::CommonPrefs::nosave);
-static tb::Prefs<tb::String> outPath(
-	"--out", "output file(octahedron)", tb::CommonPrefs::nosave);
+static tb::Prefs<tb::String>
+	outPath("--out", "output file(octahedron)", tb::CommonPrefs::nosave);
+static tb::Prefs<tb::String> type(
+	"--type", "type: e:equirectangler / s:skpbox", tb::CommonPrefs::nosave);
 static struct App : tb::App {
+	static unsigned DetermineScale(unsigned h, unsigned v) {
+		unsigned s(std::max(h, v));
+
+		// 値を二冪にする
+		for (unsigned n(0); n < 21; ++n) {
+			s |= s >> 1;
+		}
+
+		return s + 1;
+	};
+	static void Convert(const tb::Canvas& in) {
+
+
+	};
 	int Main(uint rem, const char** argv) final {
 		tb::Canvas in((std::string)inPath);
-
-		tb::Canvas::Image inImage(in);
-		Equirectangular eq(inImage);
-		const unsigned length(inImage.Width() < inImage.Height()
-								  ? inImage.Height()
-								  : inImage.Width());
-
-		tb::Canvas outCanvas(length, length);
 		{
-			tb::Canvas::Image outImage(outCanvas);
-			Out out(outImage, eq);
-		}
-		outCanvas.Save((std::string)outPath);
+			const tb::Canvas::Image inImage(in);
+			const unsigned scale(
+				DetermineScale(inImage.Width(), inImage.Height()));
 
+			tb::Canvas outCanvas(scale, scale);
+			{
+				tb::Canvas::Image outImage(outCanvas);
+				switch (((std::string)type).c_str()[0]) {
+				case 'e': {
+					Equirectangular eq(inImage);
+					Out out(outImage, eq);
+				} break;
+				case 's': {
+					Box box(inImage);
+					Out out(outImage, box);
+				} break;
+				default:
+					// TODO:自動認識
+					break;
+				}
+			}
+			outCanvas.Save((std::string)outPath);
+		}
 		return 0;
 	};
 } app;
