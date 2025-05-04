@@ -127,12 +127,12 @@ struct Box : public In {
 				uvw : {0, 1, 2},
 				oss :
 					{{
-						 // 底
+						 // 地
 						 offset : {hw * 3, hh * 5},
 						 scale : {hw, -hh}
 					 },
 					 {
-						 // 天井
+						 // 天
 						 offset : {hw * 3, hh},
 						 scale : {-hw, -hh}
 					 }}
@@ -203,6 +203,8 @@ static tb::Prefs<tb::String>
 	outPath("--out", "output file(octahedron)", tb::CommonPrefs::nosave);
 static tb::Prefs<tb::String> type(
 	"--type", "type: e:equirectangler / s:skpbox", tb::CommonPrefs::nosave);
+static tb::Prefs<unsigned>
+	pow2scale("--scale", 0, "pow2 scale", tb::CommonPrefs::nosave);
 static struct App : tb::App {
 	static unsigned DetermineScale(unsigned h, unsigned v) {
 		unsigned s(std::max(h, v));
@@ -212,16 +214,37 @@ static struct App : tb::App {
 			s |= s >> 1;
 		}
 
-		return s + 1;
+		return (s + 1) << pow2scale;
 	};
-	static void Convert(const tb::Canvas& in) {
+	static void PreProcess(tb::Canvas::Image& in) {
+		// 対向辺で境界を埋め、下側を右下に転置
+		/**
+		 * ①■②③
+		 * ■■■■
+		 * ④■⑤⑥
+		 */
+#if 0
+		const unsigned w(in.Width() / 4);
+		const unsigned h(in.Height() / 3);
 
-
+		for (unsigned n(0); n < w; ++n) {
+			// ①
+			in[h - 0][n] = in[n][w];
+			in[n][w - 1] = in[h][n];
+			// ②
+			in[h - 1][3 * w - n] = in[2 * w][n];
+			in[n][2 * w + 1] = in[h][3 * w - n];
+			// ③
+			in[h - 1][3 * w + n] = in[0][2 * w - n];
+			// ④
+		}
+#endif
 	};
 	int Main(uint rem, const char** argv) final {
 		tb::Canvas in((std::string)inPath);
 		{
-			const tb::Canvas::Image inImage(in);
+			tb::Canvas::Image inImage(in);
+			PreProcess(inImage);
 			const unsigned scale(
 				DetermineScale(inImage.Width(), inImage.Height()));
 
