@@ -120,7 +120,7 @@ struct Box : public In {
 					 {
 						 // 左側面
 						 offset : {hw, hh * 3},
-						 scale : {hw, -hh}
+						 scale : {-hw, -hh}
 					 }}
 			},
 			{
@@ -167,7 +167,7 @@ private:
 	tb::Color H(float u, float v, float w, const Handler::OS& os) const {
 		// u, v: -1.0 to 1.0
 		// o: u, v offset
-		// u, vを(0.0, 0.0) - (1/4, 1/3)に収めてoを足してその座標の色を返す
+		// u, vを(-hw, -hv) - (hw, hv)に収めてoを足してその座標の色を返す
 
 		return image.Get(
 			os.offset[0] + os.scale[0] * u / w,
@@ -187,7 +187,7 @@ private:
 		 * ay: 1x0b = 4, 6
 		 * az: x11b = 3, 7
 		 */
-		auto& h(*handlers[(ax < ay) * 4 | (ax < az) * 2 | (ay < az)]);
+		auto& h(*handlers[((ax < ay) * 4) | ((ax < az) * 2) | (ay < az)]);
 
 		const unsigned& w(h.uvw[2]);
 		return H(v[h.uvw[0]], v[h.uvw[1]], v[w], h.oss[0 < v[w]]);
@@ -229,14 +229,22 @@ static struct App : tb::App {
 
 		for (unsigned n(0); n < w; ++n) {
 			// ①
-			in[h - 0][n] = in[n][w];
+			in[h - 1][n] = in[n][w];
 			in[n][w - 1] = in[h][n];
 			// ②
-			in[h - 1][3 * w - n] = in[2 * w][n];
-			in[n][2 * w + 1] = in[h][3 * w - n];
+			in[h - 1][2 * w + n] = in[2 * w - n][2 * w - 1];
+			in[n][2 * w] = in[h][3 * w - n];
 			// ③
-			in[h - 1][3 * w + n] = in[0][2 * w - n];
+			in[h - 1][3 * w + n] = in[0][2 * w - n]; // TODO:ギャップを消す
 			// ④
+			in[2 * h][n] = in[3 * h - n - 1][2 * w - 1];
+			in[2 * h + n][w - 1] = in[2 * h - 1][w - n];
+			// ⑤
+			in[2 * h][2 * w + n] = in[2 * h + n][2 * w - 1];
+			in[2 * h + n][2 * w] = in[2 * h - 1][2 * w + n];
+			// ⑥
+			in[2 * h + 1][3 * w + n] =
+				in[3 * h - 1][2 * w - n]; // TODO:ギャップを消す
 		}
 #endif
 	};
@@ -244,7 +252,6 @@ static struct App : tb::App {
 		tb::Canvas in((std::string)inPath);
 		{
 			tb::Canvas::Image inImage(in);
-			PreProcess(inImage);
 			const unsigned scale(
 				DetermineScale(inImage.Width(), inImage.Height()));
 
@@ -257,6 +264,7 @@ static struct App : tb::App {
 					Out out(outImage, eq);
 				} break;
 				case 's': {
+					PreProcess(inImage);
 					Box box(inImage);
 					Out out(outImage, box);
 				} break;
