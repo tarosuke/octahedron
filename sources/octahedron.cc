@@ -67,8 +67,7 @@ protected:
 		if (h < 0) {
 			// 下側
 			tb::Vector<3, float> v{
-				-sx * sy * Fold(ay, sy), sx * sy * Fold(ax, sx),
-				h * std::sqrtf(2)};
+				-sx * sy * Fold(ay, sy), sx * sy * Fold(ax, sx), h};
 			v.Normalize();
 			return in.GetColor(v);
 		}
