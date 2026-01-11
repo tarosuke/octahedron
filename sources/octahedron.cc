@@ -19,10 +19,10 @@
 #include <cmath>
 #include <tb/app.h>
 #include <tb/canvas.h>
+#include <tb/geometry/vector.h>
 #include <tb/image.h>
 #include <tb/prefs.h>
 #include <tb/string.h>
-#include <tb/vector.h>
 
 
 
@@ -31,7 +31,7 @@ struct In {
 	virtual ~In() {};
 
 	// ベクタ(方向が指すテクスチャ上の色を返す)
-	virtual tb::Color GetColor(const tb::Vector<3, float>&) const = 0;
+	virtual tb::Color GetColor(const tb::geometry::Vector<3, float>&) const = 0;
 
 protected:
 	const tb::Image& image;
@@ -66,14 +66,14 @@ protected:
 		// 投影して正規化
 		if (h < 0) {
 			// 下側
-			tb::Vector<3, float> v{
-				-sx * sy * Fold(ay, sy), sx * sy * Fold(ax, sx), h};
+			tb::geometry::Vector<3, float> v(
+				{-sx * sy * Fold(ay, sy), sx * sy * Fold(ax, sx), h});
 			v.Normalize();
 			return in.GetColor(v);
 		}
 
 		// 上側
-		tb::Vector<3, float> v{-xx, yy, h};
+		tb::geometry::Vector<3, float> v({-xx, yy, h});
 		v.Normalize();
 		return in.GetColor(v);
 	};
@@ -91,7 +91,7 @@ struct Equirectangular : In {
 	Equirectangular(const tb::Image& i) : In(i) {};
 
 private:
-	tb::Color GetColor(const tb::Vector<3, float>& v) const final {
+	tb::Color GetColor(const tb::geometry::Vector<3, float>& v) const final {
 		const float e(std::atan2(v[2], std::sqrt(v[0] * v[0] + v[1] * v[1])));
 		const float d(std::atan2(v[1], v[0]));
 
@@ -110,45 +110,42 @@ struct Box : public In {
 		max{
 			{
 				uvw : {1, 2, 0},
-				oss :
-					{{
-						 // 右側面
-						 offset : {hw * 5, hh * 3},
-						 scale : {-hw, hh}
-					 },
-					 {
-						 // 左側面
-						 offset : {hw, hh * 3},
-						 scale : {-hw, -hh}
-					 }}
+				oss : {{
+						   // 右側面
+						   offset : (float[2]){hw * 5, hh * 3},
+						   scale : (float[2]){-hw, hh}
+					   },
+					{
+						// 左側面
+						offset : (float[2]){hw, hh * 3},
+						scale : (float[2]){-hw, -hh}
+					}}
 			},
 			{
 				uvw : {0, 1, 2},
-				oss :
-					{{
-						 // 地
-						 offset : {hw * 3, hh * 5},
-						 scale : {hw, -hh}
-					 },
-					 {
-						 // 天
-						 offset : {hw * 3, hh},
-						 scale : {-hw, -hh}
-					 }}
+				oss : {{
+						   // 地
+						   offset : (float[2]){hw * 3, hh * 5},
+						   scale : (float[2]){hw, -hh}
+					   },
+					{
+						// 天
+						offset : (float[2]){hw * 3, hh},
+						scale : (float[2]){-hw, -hh}
+					}}
 			},
 			{
 				uvw : {0, 2, 1},
-				oss :
-					{{
-						 // 前
-						 offset : {hw * 3, hh * 3},
-						 scale : {hw, hh}
-					 },
-					 {
-						 // 後
-						 offset : {hw * 7, hh * 3},
-						 scale : {hw, -hh}
-					 }}
+				oss : {{
+						   // 前
+						   offset : (float[2]){hw * 3, hh * 3},
+						   scale : (float[2]){hw, hh}
+					   },
+					{
+						// 後
+						offset : (float[2]){hw * 7, hh * 3},
+						scale : (float[2]){hw, -hh}
+					}}
 			},
 		},
 		handlers{&max[0], &max[0], 0, &max[1], &max[2], 0, &max[2], &max[1]} {};
@@ -159,8 +156,8 @@ private:
 	struct Handler {
 		unsigned uvw[3];
 		struct OS {
-			tb::Vector<2, float> offset; // 面の中心
-			tb::Vector<2, float> scale;
+			tb::geometry::Vector<2, float> offset; // 面の中心
+			tb::geometry::Vector<2, float> scale;
 		} oss[2]; // 対象軸が負[0] / 正[1]
 	};
 	tb::Color H(float u, float v, float w, const Handler::OS& os) const {
@@ -168,15 +165,14 @@ private:
 		// o: u, v offset
 		// u, vを(-hw, -hv) - (hw, hv)に収めてoを足してその座標の色を返す
 
-		return image.Get(
-			os.offset[0] + os.scale[0] * u / w,
+		return image.Get(os.offset[0] + os.scale[0] * u / w,
 			os.offset[1] + os.scale[1] * v / w);
 	};
 	const Handler max[3];
 	const Handler* const handlers[8];
 
 
-	tb::Color GetColor(const tb::Vector<3, float>& v) const final {
+	tb::Color GetColor(const tb::geometry::Vector<3, float>& v) const final {
 		const float ax(std::abs(v[0]));
 		const float ay(std::abs(v[1]));
 		const float az(std::abs(v[2]));
@@ -194,24 +190,21 @@ private:
 };
 
 
-static tb::Prefs<tb::String> inPath(
-	"--in",
+static tb::Prefs<tb::String> inPath("--in",
 	"input file(equirectangler, skybox, etc...)",
 	tb::CommonPrefs::nosave);
-static tb::Prefs<tb::String>
-	outPath("--out", "output file(octahedron)", tb::CommonPrefs::nosave);
+static tb::Prefs<tb::String> outPath(
+	"--out", "output file(octahedron)", tb::CommonPrefs::nosave);
 static tb::Prefs<tb::String> type(
 	"--type", "type: e:equirectangler / s:skpbox", tb::CommonPrefs::nosave);
-static tb::Prefs<unsigned>
-	pow2scale("--scale", 0, "pow2 scale", tb::CommonPrefs::nosave);
+static tb::Prefs<unsigned> pow2scale(
+	"--scale", 0, "pow2 scale", tb::CommonPrefs::nosave);
 static struct App : tb::App {
 	static unsigned DetermineScale(unsigned h, unsigned v) {
 		unsigned s(std::max(h, v));
 
 		// 値を二冪にする
-		for (unsigned n(0); n < 21; ++n) {
-			s |= s >> 1;
-		}
+		for (unsigned n(0); n < 21; ++n) { s |= s >> 1; }
 
 		return (s + 1) << pow2scale;
 	};
